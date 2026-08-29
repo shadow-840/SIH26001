@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0d1815">
+<title>TerraSentinel · NER Landslide Watch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+  /* ============ TOKENS ============ */
+  :root{
+    --bg:#0c1613;
+    --bg-2:#0f1c18;
+    --panel:#132420;
+    --panel-hi:#172b26;
+    --line:rgba(238,232,219,.08);
+    --line-strong:rgba(238,232,219,.16);
+    --ink:#ece5d6;
+    --ink-dim:#a9b7ae;
+    --ink-faint:#6d8079;
+
+    --laterite:#c8582f;
+    --laterite-dim:rgba(200,88,47,.16);
+    --amber:#d9a441;
+    --amber-dim:rgba(217,164,65,.16);
+    --moss:#84a86b;
+    --moss-dim:rgba(132,168,107,.16);
+    --teal:#5aa79c;
+    --teal-dim:rgba(90,167,156,.14);
+
+    --display:'Fraunces', serif;
+    --body:'IBM Plex Sans', -apple-system, sans-serif;
+    --mono:'IBM Plex Mono', ui-monospace, monospace;
+
+    --radius-s:10px;
+    --radius-m:16px;
+    --radius-l:22px;
+    --shell-pad: clamp(16px, 3vw, 32px);
+
+    /* glass surfaces */
+    --glass:rgba(236,229,209,.06);
+    --glass-hi:rgba(236,229,209,.10);
+    --glass-border:rgba(236,229,209,.14);
+    --glass-border-hi:rgba(236,229,209,.24);
+    --glass-blur: blur(20px);
+    --glass-shadow: 0 8px 32px rgba(0,0,0,.35);
+    --glow-teal: 0 0 16px rgba(90,167,156,.5);
+    --glow-laterite: 0 0 16px rgba(200,88,47,.55);
+    --glow-amber: 0 0 16px rgba(217,164,65,.5);
+    --glow-moss: 0 0 14px rgba(132,168,107,.5);
+  }
+
+  /* fine data-grid overlay across the whole app */
+  .app-shell::before{
+    content:"";
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    background-image:
+      linear-gradient(var(--glass-border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--glass-border) 1px, transparent 1px);
+    background-size:42px 42px;
+    opacity:.16;
+    mask-image:radial-gradient(ellipse 1400px 900px at 30% 0%, black, transparent 75%);
+  }
+
+  *{box-sizing:border-box;}
+  html{-webkit-font-smoothing:antialiased;}
+  body{
+    margin:0;
+    min-height:100vh;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--body);
+    line-height:1.45;
+    position:relative;
+  }
+  /* fixed, saturated backdrop — this is what the glass panels reveal through blur */
+  body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    z-index:0;
+    background:
+      radial-gradient(ellipse 900px 700px at 10% 0%, rgba(90,167,156,.55), transparent 55%),
+      radial-gradient(ellipse 800px 650px at 85% 15%, rgba(200,88,47,.45), transparent 55%),
+      radial-gradient(ellipse 700px 600px at 30% 90%, rgba(132,168,107,.4), transparent 55%),
+      radial-gradient(ellipse 600px 500px at 95% 85%, rgba(217,164,65,.35), transparent 55%),
+      var(--bg);
+  }
+  .app-shell{ position:relative; z-index:1; }
+  h1,h2,h3{font-family:var(--display); font-weight:600; margin:0;}
+  p{margin:0;}
+  a{color:inherit; text-decoration:none;}
+  button{font-family:var(--body); cursor:pointer;}
+  ::selection{background:var(--laterite); color:#fff;}
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; scroll-behavior:auto !important;}
+  }
+
+  /* focus ring */
+  a:focus-visible, button:focus-visible, select:focus-visible{
+    outline:2px solid var(--teal);
+    outline-offset:2px;
+    border-radius:6px;
+  }
+
+  /* ============ SHELL ============ */
+  .app-shell{
+    display:grid;
+    grid-template-columns: 250px 1fr;
+    min-height:100vh;
+  }
+
+  /* ============ SIDEBAR ============ */
+  .sidebar{
+    background:linear-gradient(180deg, var(--glass-hi), var(--glass));
+    backdrop-filter:var(--glass-blur);
+    -webkit-backdrop-filter:var(--glass-blur);
+    border-right:1px solid var(--glass-border);
+    box-shadow:1px 0 0 rgba(255,255,255,.03) inset;
+    padding:26px 20px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    position:relative;
+  }
+  .sidebar::after{
+    /* faint contour etch running down the rail */
+    content:"";
+    position:absolute; inset:0;
+    background-image:
+      repeating-linear-gradient(180deg, transparent 0 38px, var(--line) 38px 39px);
+    mask-image:linear-gradient(180deg, transparent, rgba(0,0,0,.5) 30%, rgba(0,0,0,.5) 70%, transparent);
+    pointer-events:none;
+  }
+  .brand{
+    display:flex; align-items:center; gap:10px;
+    font-family:var(--display); font-weight:600; font-size:20px;
+    letter-spacing:.01em;
+    padding:2px 6px 20px 6px;
+  }
+  .brand-mark{
+    width:34px; height:34px; border-radius:9px;
+    display:grid; place-items:center;
+    background:var(--glass-hi);
+    backdrop-filter:var(--glass-blur);
+    -webkit-backdrop-filter:var(--glass-blur);
+    border:1px solid var(--glass-border-hi);
+    font-family:var(--mono); font-size:12px; font-weight:500;
+    color:var(--teal);
+  }
+  .brand-accent{color:var(--laterite);}
+
+  .sidebar-label{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--ink-faint);
+    padding:0 6px 10px;
+  }
+
+  nav{display:flex; flex-direction:column; gap:2px; z-index:1;}
+  .nav-item{
+    display:flex; align-items:center; gap:10px;
+    padding:10px 12px; border-radius:var(--radius-s);
+    color:var(--ink-dim); font-size:14px; font-weight:500;
+    transition:background .15s ease, color .15s ease;
+  }
+  .nav-item:hover{ background:var(--glass); color:var(--ink); }
+  .nav-item.active{
+    background:var(--glass-hi); color:var(--ink);
+    backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    box-shadow:inset 0 0 0 1px var(--glass-border-hi), inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  .nav-icon{ width:16px; text-align:center; opacity:.8; font-size:13px; }
+  .nav-count{
+    margin-left:auto; font-family:var(--mono); font-size:11px;
+    color:var(--ink-faint); background:rgba(255,255,255,.04);
+    padding:2px 6px; border-radius:20px;
+  }
+  .nav-count.alert-count{ color:var(--laterite); background:var(--laterite-dim); }
+
+  .sidebar-spacer{flex:1;}
+
+  .network-status{
+    display:flex; align-items:center; gap:10px;
+    padding:12px; border-radius:var(--radius-s);
+    background:var(--glass); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    border:1px solid var(--glass-border);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+    font-size:12.5px; margin-bottom:10px;
+  }
+  .network-status strong{display:block; font-size:12.5px; font-weight:600;}
+  .network-status small{color:var(--ink-faint); font-family:var(--mono); font-size:10.5px;}
+  .pulse{
+    width:8px; height:8px; border-radius:50%; background:var(--moss); flex:none;
+    box-shadow:var(--glow-moss);
+    animation:pulse 2.4s ease-out infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(132,168,107,.5); }
+    70%{ box-shadow:0 0 0 8px rgba(132,168,107,0); }
+    100%{ box-shadow:0 0 0 0 rgba(132,168,107,0); }
+  }
+
+  .profile{
+    display:flex; align-items:center; gap:10px;
+    padding:8px 6px;
+  }
+  .avatar{
+    width:34px; height:34px; border-radius:50%;
+    background:linear-gradient(135deg, var(--teal), #2f6b62);
+    display:grid; place-items:center; font-size:12.5px; font-weight:600; color:#0c1613;
+    flex:none;
+  }
+  .profile strong{display:block; font-size:13px;}
+  .profile small{color:var(--ink-faint); font-size:11.5px;}
+  .dots{margin-left:auto; color:var(--ink-faint); letter-spacing:2px;}
+
+  /* ============ MAIN ============ */
+  .main-content{ padding: var(--shell-pad) var(--shell-pad) 40px; min-width:0; }
+
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding-bottom:22px;
+  }
+  .breadcrumb{
+    font-family:var(--mono); font-size:11px; letter-spacing:.12em;
+    color:var(--ink-faint);
+  }
+  .breadcrumb span{ color:var(--line-strong); margin:0 6px; }
+  .top-actions{ display:flex; align-items:center; gap:14px; }
+  .last-updated{
+    font-family:var(--mono); font-size:12px; color:var(--ink-dim);
+    display:flex; align-items:center; gap:7px;
+  }
+  .live-dot{
+    width:6px; height:6px; border-radius:50%; background:var(--teal); flex:none;
+    box-shadow:var(--glow-teal);
+    animation:pulse-teal 2s ease-out infinite;
+  }
+  @keyframes pulse-teal{
+    0%{ box-shadow:0 0 0 0 rgba(90,167,156,.55); }
+    70%{ box-shadow:0 0 0 7px rgba(90,167,156,0); }
+    100%{ box-shadow:0 0 0 0 rgba(90,167,156,0); }
+  }
+  .icon-button{
+    width:34px; height:34px; border-radius:50%;
+    border:1px solid var(--glass-border); background:var(--glass); color:var(--ink-dim);
+    backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    position:relative; font-size:14px;
+    transition:border-color .15s ease, color .15s ease, background .15s ease;
+  }
+  .icon-button:hover{ border-color:var(--glass-border-hi); color:var(--ink); background:var(--glass-hi); }
+  .notification-dot{
+    position:absolute; top:6px; right:7px; width:6px; height:6px;
+    border-radius:50%; background:var(--laterite);
+  }
+  .profile-button{
+    display:flex; align-items:center; gap:6px;
+    padding:8px 12px; border-radius:20px;
+    background:var(--glass); border:1px solid var(--glass-border);
+    backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    font-size:13px; font-weight:600; color:var(--ink);
+  }
+  .profile-button span{ color:var(--ink-faint); font-size:10px; }
+
+  .page-heading{
+    display:flex; align-items:flex-end; justify-content:space-between; gap:20px;
+    padding:6px 0 28px;
+    flex-wrap:wrap;
+  }
+  .eyebrow{
+    font-family:var(--mono); font-size:11px; letter-spacing:.14em;
+    color:var(--teal); text-transform:uppercase; margin-bottom:10px;
+  }
+  .page-heading h1{
+    font-size:clamp(28px, 3.4vw, 38px); font-weight:600; color:var(--ink);
+  }
+  .heading-period{ color:var(--laterite); }
+  .heading-copy{ color:var(--ink-dim); margin-top:8px; font-size:14.5px; max-width:46ch; }
+  .export-button{
+    display:flex; align-items:center; gap:8px;
+    padding:12px 18px; border-radius:12px;
+    background:var(--ink); color:#132420; font-weight:600; font-size:13.5px;
+    border:none;
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .export-button:hover{ transform:translateY(-1px); box-shadow:0 8px 20px rgba(0,0,0,.25); }
+
+  /* ============ METRIC GRID ============ */
+  .metric-grid{
+    display:grid; grid-template-columns:repeat(4, 1fr); gap:14px;
+    margin-bottom:16px;
+  }
+  .metric-card{
+    background:linear-gradient(165deg, var(--glass-hi), var(--glass));
+    backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    border:1px solid var(--glass-border);
+    border-radius:var(--radius-m);
+    box-shadow:var(--glass-shadow), inset 0 1px 0 rgba(255,255,255,.07);
+    padding:20px;
+    display:flex; flex-direction:column; gap:14px;
+    min-height:150px;
+    position:relative;
+    transition:transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+  }
+  .metric-card:hover{ transform:translateY(-2px); border-color:var(--glass-border-hi); box-shadow:var(--glass-shadow), var(--glow-teal), inset 0 1px 0 rgba(255,255,255,.07); }
+  .metric-primary{
+    background:linear-gradient(165deg, rgba(90,167,156,.14), var(--glass));
+    border-color:var(--glass-border-hi);
+  }
+  .metric-top{
+    display:flex; align-items:center; justify-content:space-between;
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.1em;
+    color:var(--ink-faint);
+  }
+  .trend-down{ color:var(--moss); font-family:var(--mono); font-size:11.5px; }
+  .trend-up{ color:var(--amber); font-family:var(--mono); font-size:11.5px; }
+  .metric-icon{
+    width:22px; height:22px; border-radius:7px; display:grid; place-items:center;
+    font-size:12px;
+  }
+  .metric-icon.orange{ background:var(--amber-dim); color:var(--amber); }
+  .metric-icon.teal{ background:var(--teal-dim); color:var(--teal); }
+  .metric-value{
+    font-family:var(--display); font-size:40px; font-weight:600; line-height:1;
+    color:var(--ink);
+    font-variant-numeric:tabular-nums;
+  }
+  .metric-value span{ font-size:17px; color:var(--ink-faint); font-weight:400; margin-left:2px; }
+  .metric-foot{
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:12px; color:var(--ink-dim); margin-top:auto;
+  }
+  .status-pill{
+    font-size:11px; font-weight:600; padding:4px 9px; border-radius:20px;
+    display:inline-flex; align-items:center; gap:5px;
+  }
+  .status-pill.low{ background:var(--moss-dim); color:var(--moss); }
+  .status-pill.good{ background:var(--moss-dim); color:var(--moss); }
+  .status-pill.normal{ background:var(--teal-dim); color:var(--teal); }
+  .status-pill.elevated{ background:var(--amber-dim); color:var(--amber); }
+
+  /* elevation sparkline replacing the plain risk bar */
+  .risk-profile{ width:100%; height:34px; }
+  .risk-profile path.fill{ fill:url(#riskGradient); opacity:.5; }
+  .risk-profile path.line{ fill:none; stroke:var(--moss); stroke-width:1.6; }
+
+  /* ============ PANELS (shared) ============ */
+  .panel{
+    background:linear-gradient(160deg, var(--glass-hi), var(--glass));
+    backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    border:1px solid var(--glass-border);
+    border-radius:var(--radius-l);
+    box-shadow:var(--glass-shadow), inset 0 1px 0 rgba(255,255,255,.06);
+    padding:22px;
+    display:flex; flex-direction:column;
+    position:relative;
+  }
+  .panel::before, .panel::after,
+  .metric-card::before, .metric-card::after{
+    content:""; position:absolute; width:14px; height:14px; pointer-events:none;
+    border-color:var(--teal-dim); opacity:.9;
+  }
+  .panel::before, .metric-card::before{ top:-1px; left:-1px; border-top:2px solid var(--teal); border-left:2px solid var(--teal); border-top-left-radius:6px; }
+  .panel::after, .metric-card::after{ bottom:-1px; right:-1px; border-bottom:2px solid var(--teal); border-right:2px solid var(--teal); border-bottom-right-radius:6px; }
+  .metric-primary::before, .metric-primary::after{ border-color:var(--laterite); }
+  .panel-header{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:16px; gap:12px;
+  }
+  .panel-header h2{ font-size:19px; font-weight:600; color:var(--ink); display:flex; align-items:center; gap:8px; }
+  .header-count{
+    font-family:var(--mono); font-size:11px; color:var(--laterite);
+    background:var(--laterite-dim); padding:2px 8px; border-radius:20px;
+  }
+  .text-button{
+    background:none; border:none; color:var(--teal); font-size:13px; font-weight:600;
+    display:flex; align-items:center; gap:5px;
+  }
+  .text-button:hover{ text-decoration:underline; }
+  .square-button{
+    width:30px; height:30px; border-radius:8px; border:1px solid var(--glass-border);
+    background:var(--glass); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    color:var(--ink-dim); font-size:13px;
+  }
+  .square-button:hover{ color:var(--ink); border-color:var(--glass-border-hi); background:var(--glass-hi); }
+
+  /* ============ PRIMARY GRID: MAP + ALERTS ============ */
+  .primary-grid{ display:grid; grid-template-columns:1.55fr 1fr; gap:16px; margin-bottom:16px; }
+
+  .map-controls{ display:flex; align-items:center; gap:8px; }
+  .map-controls select{
+    background:var(--glass); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    color:var(--ink); border:1px solid var(--glass-border);
+    border-radius:8px; padding:7px 10px; font-size:12.5px; font-family:var(--body);
+  }
+
+  .map-visual{
+    position:relative; border-radius:14px; overflow:hidden;
+    background:radial-gradient(ellipse 500px 400px at 30% 20%, rgba(90,167,156,.18), transparent 60%), var(--glass);
+    backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+    height:340px; border:1px solid var(--glass-border);
+  }
+  .radar-rings{
+    position:absolute; inset:0; pointer-events:none; z-index:1;
+    background:
+      repeating-radial-gradient(circle at 50% 50%,
+        transparent 0, transparent 54px,
+        var(--glass-border) 55px, var(--glass-border) 56px),
+      linear-gradient(var(--glass-border) 1px, transparent 1px) 50% 50% / 100% 1px no-repeat,
+      linear-gradient(90deg, var(--glass-border) 1px, transparent 1px) 50% 50% / 1px 100% no-repeat;
+  }
+  .radar-ticks{
+    position:absolute; inset:0; pointer-events:none; z-index:1;
+    background:repeating-conic-gradient(from 0deg,
+      var(--glass-border-hi) 0deg .5deg, transparent .5deg 15deg);
+    mask-image:radial-gradient(circle at 50% 50%, transparent 0, transparent 71%, black 72%, black 76%, transparent 77%);
+    -webkit-mask-image:radial-gradient(circle at 50% 50%, transparent 0, transparent 71%, black 72%, black 76%, transparent 77%);
+    animation:spin-slow 90s linear infinite reverse;
+  }
+  @keyframes spin-slow{ to{ transform:rotate(360deg); } }
+  .radar-sweep{
+    position:absolute; inset:0; pointer-events:none; z-index:1;
+    /* a single bright line at 0deg with a short fading trail behind it */
+    background:conic-gradient(from 0deg,
+      rgba(90,167,156,.9) 0deg, rgba(90,167,156,.9) .6deg,
+      transparent .6deg, transparent 360deg);
+    filter:drop-shadow(0 0 6px rgba(90,167,156,.8));
+    animation:sweep 4s linear infinite;
+    mix-blend-mode:screen;
+  }
+  .radar-sweep::before{
+    content:"";
+    position:absolute; inset:0;
+    background:conic-gradient(from 0deg, rgba(90,167,156,.22), transparent 26deg);
+  }
+  @keyframes sweep{ to{ transform:rotate(360deg); } }
+  .topo-svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .topo-svg path{ fill:none; stroke:var(--line-strong); stroke-width:1; }
+  .topo-svg path.ridge{ stroke:rgba(238,232,219,.13); }
+  .elevation-tag{
+    position:absolute; z-index:2; font-family:var(--mono); font-size:9.5px; color:var(--ink-faint);
+    background:var(--glass-hi); border:1px solid var(--glass-border);
+    padding:1px 5px; border-radius:4px;
+    backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+  }
+  .map-label{
+    position:absolute; z-index:2; font-family:var(--mono); font-size:10.5px; letter-spacing:.06em;
+    color:var(--ink-faint); text-transform:uppercase;
+  }
+  .label-a{ left:24%; top:16%; } .label-b{ left:56%; top:38%; }
+  .label-c{ left:66%; top:14%; } .label-d{ left:44%; top:60%; }
+
+  .map-point{
+    position:absolute; z-index:2; width:16px; height:16px; margin:-8px 0 0 -8px;
+    display:grid; place-items:center; transition:opacity .2s ease, transform .2s ease;
+  }
+  .map-point span{
+    width:9px; height:9px; border-radius:50%; display:block; position:relative; z-index:1;
+  }
+  .map-point::before{
+    content:""; position:absolute; inset:0; border-radius:50%;
+    animation:ring 2.6s ease-out infinite;
+  }
+  .map-point.dimmed{ opacity:.15; transform:scale(.85); }
+  .map-point.detected{ transform:scale(1.45); z-index:3; }
+  .map-point.detected span{ filter:brightness(1.5) saturate(1.3); }
+  .map-point.detected b{ opacity:1; transform:translateY(-2px); }
+  .map-point b{ transition:opacity .25s ease, transform .25s ease; }
+  @keyframes ring{ 0%{ box-shadow:0 0 0 0 currentColor; opacity:.5; } 100%{ box-shadow:0 0 0 14px currentColor; opacity:0; } }
+
+  .echo-blip{
+    position:absolute; z-index:1; width:5px; height:5px; margin:-2.5px 0 0 -2.5px;
+    border-radius:50%; background:var(--teal); pointer-events:none;
+    opacity:0; animation:echo-fade 2.6s ease-out forwards;
+  }
+  @keyframes echo-fade{
+    0%{ opacity:0; transform:scale(.4); }
+    15%{ opacity:.85; transform:scale(1.4); box-shadow:0 0 10px rgba(90,167,156,.8); }
+    100%{ opacity:0; transform:scale(1); box-shadow:0 0 0 rgba(90,167,156,0); }
+  }
+
+  .radar-status{
+    position:absolute; z-index:2; top:14px; left:14px;
+    font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--teal); display:flex; align-items:center; gap:6px;
+    background:var(--glass-hi); border:1px solid var(--glass-border);
+    padding:5px 10px; border-radius:20px;
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  }
+  .radar-status i{
+    width:5px; height:5px; border-radius:50%; background:var(--teal); flex:none;
+    box-shadow:var(--glow-teal); animation:pulse-teal 1.4s ease-in-out infinite;
+  }
+
+  .point-red span{ background:var(--laterite); box-shadow:var(--glow-laterite); } .point-red{ color:rgba(200,88,47,.4); }
+  .point-orange span{ background:var(--amber); box-shadow:var(--glow-amber); } .point-orange{ color:rgba(217,164,65,.35); }
+  .point-green span{ background:var(--moss); box-shadow:var(--glow-moss); } .point-green{ color:rgba(132,168,107,.3); }
+  .map-point b{
+    position:absolute; top:-19px; font-family:var(--mono); font-size:10px; font-weight:500;
+    color:var(--ink); background:var(--bg-2); border:1px solid var(--line-strong);
+    padding:1px 5px; border-radius:5px; white-space:nowrap;
+    opacity:0; transform:translateY(2px);
+  }
+  .map-point:hover b{ opacity:1; transform:translateY(-2px); }
+
+  .map-legend{
+    position:absolute; z-index:2; bottom:14px; left:14px; display:flex; gap:14px;
+    font-size:11.5px; color:var(--ink-dim);
+    background:var(--glass-hi); border:1px solid var(--glass-border);
+    padding:7px 12px; border-radius:10px;
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  }
+  .map-legend span{ display:flex; align-items:center; gap:6px; }
+  .legend-dot{ width:7px; height:7px; border-radius:50%; display:inline-block; }
+  .legend-dot.green{ background:var(--moss); } .legend-dot.orange{ background:var(--amber); } .legend-dot.red{ background:var(--laterite); }
+
+  /* alerts */
+  .alert-list{ display:flex; flex-direction:column; gap:8px; }
+  .alert-item{
+    display:flex; align-items:center; gap:12px;
+    padding:12px; border-radius:12px; border:1px solid var(--glass-border);
+    background:var(--glass);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    transition:border-color .15s ease, background .15s ease, transform .15s ease;
+  }
+  .alert-item:hover{ border-color:var(--glass-border-hi); background:var(--glass-hi); transform:translateX(2px); }
+  .alert-severity{
+    width:30px; height:30px; border-radius:9px; flex:none;
+    display:grid; place-items:center; font-weight:700; font-size:13px;
+  }
+  .alert-severity.high{ background:var(--laterite-dim); color:var(--laterite); box-shadow:var(--glow-laterite); }
+  .alert-severity.medium{ background:var(--amber-dim); color:var(--amber); box-shadow:var(--glow-amber); }
+  .alert-info{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .alert-info strong{ font-size:13.5px; font-weight:600; }
+  .alert-info span{ font-family:var(--mono); font-size:11px; color:var(--ink-faint); }
+  .alert-arrow{ margin-left:auto; color:var(--ink-faint); }
+  .alert-footer{
+    margin-top:14px; padding-top:14px; border-top:1px solid var(--line);
+    display:flex; align-items:center; gap:8px;
+    font-size:11.5px; color:var(--ink-faint); font-family:var(--mono);
+  }
+
+  /* ============ BOTTOM GRID ============ */
+  .bottom-grid{ display:grid; grid-template-columns:1.5fr 1fr; gap:16px; }
+
+  .sensor-table{ display:flex; flex-direction:column; }
+  .table-head{
+    display:grid; grid-template-columns:1.5fr 1fr 1fr .9fr; gap:8px;
+    font-family:var(--mono); font-size:10px; letter-spacing:.1em;
+    color:var(--ink-faint); padding:0 12px 10px;
+  }
+  .table-row{
+    display:grid; grid-template-columns:1.5fr 1fr 1fr .9fr; gap:8px; align-items:center;
+    padding:13px 12px; border-radius:10px; font-size:13px;
+    border-top:1px solid var(--line);
+    transition:background .15s ease;
+  }
+  .table-row:hover{ background:var(--glass-hi); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+  .table-row strong{ display:flex; align-items:center; gap:8px; font-weight:500; }
+  .table-dot{ width:7px; height:7px; border-radius:50%; display:inline-block; flex:none; }
+  .table-dot.green{ background:var(--moss); } .table-dot.orange{ background:var(--amber); }
+  .mini-bar{
+    display:inline-flex; width:52px; height:5px; border-radius:6px; background:var(--line);
+    overflow:hidden; margin-left:8px; vertical-align:middle;
+  }
+  .mini-bar i{ display:block; height:100%; background:var(--moss); border-radius:6px; }
+  .mini-bar.orange-bar i{ background:var(--amber); }
+
+  .forecast-panel{ gap:6px; }
+  .confidence{
+    font-family:var(--mono); font-size:11px; color:var(--teal);
+    background:var(--teal-dim); border:1px solid rgba(90,167,156,.3);
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    padding:4px 9px; border-radius:20px;
+  }
+  .forecast-main{ display:flex; align-items:center; gap:16px; padding:6px 0 14px; }
+  .forecast-temp{
+    font-family:var(--display); font-size:44px; font-weight:600;
+  }
+  .forecast-temp span{ font-size:18px; color:var(--ink-faint); }
+  .forecast-main strong{ display:block; font-size:14px; font-weight:600; }
+  .forecast-main p{ color:var(--ink-dim); font-size:12.5px; margin-top:2px; }
+  .weather-icon{ margin-left:auto; font-size:26px; color:var(--ink-faint); }
+  .forecast-chart{ position:relative; height:80px; margin:4px 0; }
+  .forecast-chart svg{ width:100%; height:100%; }
+  .forecast-hours{
+    display:flex; justify-content:space-between;
+    font-family:var(--mono); font-size:10.5px; color:var(--ink-faint);
+    padding-top:6px; border-top:1px solid var(--line);
+  }
+
+  footer{
+    display:flex; align-items:center; gap:22px; flex-wrap:wrap;
+    margin-top:24px; padding-top:18px; border-top:1px solid var(--line);
+    font-family:var(--mono); font-size:11px; color:var(--ink-faint);
+  }
+  .footer-health{
+    width:7px; height:7px; border-radius:50%; background:var(--moss); display:inline-block;
+  }
+
+  /* ============ FALLBACK (no backdrop-filter support) ============ */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))){
+    .sidebar, .panel, .metric-card, .network-status, .icon-button,
+    .profile-button, .square-button, .map-controls select, .map-visual,
+    .elevation-tag, .map-legend, .alert-item, .nav-item.active{
+      background:var(--panel);
+    }
+  }
+
+  /* ============ RESPONSIVE ============ */
+  @media (max-width:1100px){
+    .primary-grid, .bottom-grid{ grid-template-columns:1fr; }
+    .metric-grid{ grid-template-columns:repeat(2,1fr); }
+  }
+  @media (max-width:820px){
+    .app-shell{ grid-template-columns:1fr; }
+    .sidebar{
+      flex-direction:row; align-items:center; padding:14px var(--shell-pad);
+      overflow-x:auto;
+    }
+    .sidebar::after{ display:none; }
+    .sidebar-label, .sidebar-spacer, .network-status{ display:none; }
+    nav{ flex-direction:row; }
+    .brand{ padding:2px 14px 2px 2px; }
+    .profile{ margin-left:auto; }
+    .table-head, .table-row{ grid-template-columns:1.4fr 1fr .8fr; }
+    .table-head span:nth-child(3), .table-row span:nth-child(3){ display:none; }
+  }
+  @media (max-width:560px){
+    .metric-grid{ grid-template-columns:1fr; }
+    .page-heading{ flex-direction:column; align-items:flex-start; }
+  }
+</style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">TS</span><span>Terra<span class="brand-accent">Sentinel</span></span></div>
+      <div class="sidebar-label">Monitoring network</div>
+      <nav>
+        <a class="nav-item active" href="#overview"><span class="nav-icon">◉</span>Overview</a>
+        <a class="nav-item" href="#risk-zones"><span class="nav-icon">△</span>Risk zones <span class="nav-count">06</span></a>
+        <a class="nav-item" href="#alerts"><span class="nav-icon">!</span>Early alerts <span class="nav-count alert-count">03</span></a>
+        <a class="nav-item" href="#sensors"><span class="nav-icon">⌁</span>Sensor network</a>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <div class="network-status"><span class="pulse"></span><div><strong>Network online</strong><small>142 nodes reporting</small></div></div>
+      <div class="profile"><div class="avatar">IN</div><div><strong>Invictus</strong><small>District operations</small></div><span class="dots">•••</span></div>
+    </aside>
+
+    <main class="main-content" id="overview">
+      <header class="topbar">
+        <div class="breadcrumb">NORTH EASTERN REGION <span>/</span> FIELD OPERATIONS</div>
+        <div class="top-actions">
+          <span class="last-updated"><span class="live-dot"></span><span id="liveClock">Live data · 09:42:18 IST</span></span>
+          <button class="icon-button" aria-label="Notifications">♢<span class="notification-dot"></span></button>
+          <button class="profile-button">IN <span>⌄</span></button>
+        </div>
+      </header>
+
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">THURSDAY, 27 AUGUST 2026</p>
+          <h1>Good morning, Invictus<span class="heading-period">.</span></h1>
+          <p class="heading-copy">Here is the ground truth across monitored corridors in the North Eastern Region.</p>
+        </div>
+        <button class="export-button">↧ <span>Download report</span></button>
+      </section>
+
+      <section class="metric-grid" aria-label="Regional summary">
+        <article class="metric-card metric-primary">
+          <div class="metric-top"><span>REGIONAL RISK INDEX</span><span class="trend-down">↓ 4.2%</span></div>
+          <div class="metric-value"><span class="count-up" data-count-to="32" data-decimals="0">0</span><span>/100</span></div>
+          <svg class="risk-profile" viewBox="0 0 200 40" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="riskGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#84a86b" stop-opacity=".7"/>
+                <stop offset="100%" stop-color="#84a86b" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path class="fill" d="M0 32 L18 26 L34 30 L50 14 L68 22 L86 10 L104 20 L122 8 L140 18 L158 12 L176 24 L200 16 L200 40 L0 40 Z"/>
+            <path class="line" d="M0 32 L18 26 L34 30 L50 14 L68 22 L86 10 L104 20 L122 8 L140 18 L158 12 L176 24 L200 16"/>
+          </svg>
+          <div class="metric-foot"><span class="status-pill low">● Low risk</span><span>7-day avg <b>33.4</b></span></div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span>ACTIVE ALERTS</span><span class="metric-icon orange">!</span></div>
+          <div class="metric-value"><span class="count-up" data-count-to="3" data-decimals="0" data-pad="2">00</span></div>
+          <div class="metric-foot"><span class="status-pill elevated">● 1 elevated</span><span>Last 24 hours</span></div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span>MONITORED ZONES</span><span class="metric-icon teal">⌁</span></div>
+          <div class="metric-value"><span class="count-up" data-count-to="24" data-decimals="0">0</span></div>
+          <div class="metric-foot"><span class="status-pill normal">● 18 normal</span><span>6 need attention</span></div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span>SENSOR UPTIME</span><span class="trend-up">↑ 0.8%</span></div>
+          <div class="metric-value"><span class="count-up" data-count-to="98.6" data-decimals="1">0</span><span>%</span></div>
+          <div class="metric-foot"><span class="status-pill good">● Healthy</span><span>142 / 144 nodes</span></div>
+        </article>
+      </section>
+
+      <section class="primary-grid">
+        <article class="panel map-panel" id="risk-zones">
+          <div class="panel-header">
+            <div><p class="eyebrow">SPATIAL OVERVIEW</p><h2>Risk zones</h2></div>
+            <div class="map-controls">
+              <select id="regionFilter" aria-label="Filter region">
+                <option value="all">All regions</option>
+                <option value="sikkim">Sikkim</option>
+                <option value="assam">Assam</option>
+                <option value="meghalaya">Meghalaya</option>
+              </select>
+              <button class="square-button" aria-label="Expand map">↗</button>
+            </div>
+          </div>
+
+          <div class="map-visual">
+            <div class="radar-rings" aria-hidden="true"></div>
+            <div class="radar-ticks" aria-hidden="true"></div>
+            <div class="radar-sweep" aria-hidden="true"></div>
+            <div class="radar-status"><i></i>Scanning</div>
+            <svg class="topo-svg" viewBox="0 0 600 340" preserveAspectRatio="none" aria-hidden="true">
+              <path class="ridge" d="M-20 260 C 80 210, 140 290, 240 240 S 400 180, 480 230 S 600 200, 640 250"/>
+              <path d="M-20 220 C 90 170, 150 250, 250 200 S 410 140, 490 190 S 600 160, 640 210"/>
+              <path d="M-20 180 C 100 130, 160 210, 260 160 S 420 100, 500 150 S 600 120, 640 170"/>
+              <path d="M-20 140 C 110 90, 170 170, 270 120 S 430 60, 510 110 S 600 80, 640 130"/>
+              <path class="ridge" d="M-20 100 C 120 50, 180 130, 280 80 S 440 20, 520 70 S 600 40, 640 90"/>
+              <path d="M-20 60 C 130 10, 190 90, 290 40 S 450 -20, 530 30 S 600 0, 640 50"/>
+            </svg>
+            <span class="elevation-tag" style="left:8%; top:10%;">2,840m</span>
+            <span class="elevation-tag" style="left:60%; top:72%;">410m</span>
+
+            <div class="map-label label-a">Sikkim</div>
+            <div class="map-label label-b">Assam</div>
+            <div class="map-label label-c">Arunachal Pradesh</div>
+            <div class="map-label label-d">Meghalaya</div>
+
+            <div class="map-point point-red" data-region="sikkim" style="left: 31%; top: 25%"><span></span><b>03 active</b></div>
+            <div class="map-point point-orange" data-region="assam" style="left: 57%; top: 47%"><span></span><b>07 watch</b></div>
+            <div class="map-point point-orange" data-region="meghalaya" style="left: 49%; top: 69%"><span></span><b>04 watch</b></div>
+            <div class="map-point point-green" data-region="assam" style="left: 70%; top: 31%"><span></span></div>
+            <div class="map-point point-green" data-region="sikkim" style="left: 23%; top: 53%"><span></span></div>
+
+            <div class="map-legend"><span><i class="legend-dot green"></i> Low</span><span><i class="legend-dot orange"></i> Moderate</span><span><i class="legend-dot red"></i> High</span></div>
+          </div>
+        </article>
+
+        <article class="panel alerts-panel" id="alerts">
+          <div class="panel-header">
+            <div><p class="eyebrow">REQUIRES ATTENTION</p><h2>Early alerts <span class="header-count">03</span></h2></div>
+            <button class="text-button">View all <span>→</span></button>
+          </div>
+          <div class="alert-list">
+            <div class="alert-item"><div class="alert-severity high">!</div><div class="alert-info"><strong>Rainfall threshold exceeded</strong><span>East Sikkim · 14 min ago</span></div><span class="alert-arrow">→</span></div>
+            <div class="alert-item"><div class="alert-severity medium">!</div><div class="alert-info"><strong>Soil moisture rising rapidly</strong><span>Ri-Bhoi, Meghalaya · 42 min ago</span></div><span class="alert-arrow">→</span></div>
+            <div class="alert-item"><div class="alert-severity medium">!</div><div class="alert-info"><strong>Ground tilt anomaly detected</strong><span>West Kameng, Arunachal · 1 hr ago</span></div><span class="alert-arrow">→</span></div>
+          </div>
+          <div class="alert-footer"><span class="live-dot"></span> Automated early warning engine active</div>
+        </article>
+      </section>
+
+      <section class="bottom-grid">
+        <article class="panel sensor-panel" id="sensors">
+          <div class="panel-header">
+            <div><p class="eyebrow">FIELD TELEMETRY</p><h2>Sensor network</h2></div>
+            <button class="text-button">All sensors <span>→</span></button>
+          </div>
+          <div class="sensor-table">
+            <div class="table-head"><span>LOCATION</span><span>SOIL MOISTURE</span><span>RAINFALL / 24H</span><span>STATUS</span></div>
+            <div class="table-row"><strong><i class="table-dot green"></i> Gangtok, Sikkim</strong><span>42% <em class="mini-bar"><i style="width:42%"></i></em></span><span>18.4 mm</span><span class="status-pill low">● Stable</span></div>
+            <div class="table-row"><strong><i class="table-dot orange"></i> Ri-Bhoi, Meghalaya</strong><span>68% <em class="mini-bar orange-bar"><i style="width:68%"></i></em></span><span>74.2 mm</span><span class="status-pill elevated">● Watch</span></div>
+            <div class="table-row"><strong><i class="table-dot green"></i> Tawang, Arunachal</strong><span>39% <em class="mini-bar"><i style="width:39%"></i></em></span><span>12.1 mm</span><span class="status-pill low">● Stable</span></div>
+          </div>
+        </article>
+
+        <article class="panel forecast-panel">
+          <div class="panel-header">
+            <div><p class="eyebrow">PREDICTIVE SIGNAL</p><h2>Next 24 hours</h2></div>
+            <span class="confidence">92% confidence</span>
+          </div>
+          <div class="forecast-main">
+            <div class="forecast-temp">27°<span>C</span></div>
+            <div><strong>Moderate rainfall</strong><p>Rainfall probability <b>64%</b></p></div>
+            <span class="weather-icon">☁</span>
+          </div>
+          <div class="forecast-chart">
+            <svg viewBox="0 0 500 100" preserveAspectRatio="none" aria-label="Rainfall forecast chart">
+              <defs>
+                <linearGradient id="forecastFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#d9a441" stop-opacity=".35"/>
+                  <stop offset="100%" stop-color="#d9a441" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="M0 76 C35 74 45 83 75 77 S115 54 145 67 S176 88 207 70 S241 28 267 47 S296 77 326 61 S359 64 387 42 S420 53 450 33 S478 23 500 16 L500 100 L0 100 Z" fill="url(#forecastFill)" stroke="none"/>
+              <path d="M0 76 C35 74 45 83 75 77 S115 54 145 67 S176 88 207 70 S241 28 267 47 S296 77 326 61 S359 64 387 42 S420 53 450 33 S478 23 500 16" fill="none" stroke="#d9a441" stroke-width="2.5" vector-effect="non-scaling-stroke"/>
+            </svg>
+          </div>
+          <div class="forecast-hours"><span>Now</span><span>12 PM</span><span>4 PM</span><span>8 PM</span><span>12 AM</span></div>
+        </article>
+      </section>
+
+      <footer>
+        <span>TerraSentinel v0.8.4</span>
+        <span>Data sources: IMD · ISRO Bhuvan · Edge sensor network</span>
+        <span><i class="footer-health"></i> System health nominal</span>
+      </footer>
+    </main>
+  </div>
+
+<script>
+  // Live IST clock
+  function updateClock(){
+    var el = document.getElementById('liveClock');
+    if(!el) return;
+    var now = new Date();
+    var ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    var hh = String(ist.getHours()).padStart(2,'0');
+    var mm = String(ist.getMinutes()).padStart(2,'0');
+    var ss = String(ist.getSeconds()).padStart(2,'0');
+    el.textContent = 'Live data · ' + hh + ':' + mm + ':' + ss + ' IST';
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // Count-up animation for metric values
+  var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('.count-up').forEach(function(el){
+    var target = parseFloat(el.dataset.countTo);
+    var decimals = parseInt(el.dataset.decimals || '0', 10);
+    var pad = parseInt(el.dataset.pad || '0', 10);
+    if(prefersReducedMotion || isNaN(target)){
+      el.textContent = target.toFixed(decimals).padStart(pad, '0');
+      return;
+    }
+    var duration = 1200, start = null;
+    function step(ts){
+      if(!start) start = ts;
+      var progress = Math.min((ts - start) / duration, 1);
+      var eased = 1 - Math.pow(1 - progress, 3);
+      var value = (target * eased).toFixed(decimals);
+      el.textContent = value.padStart(pad + (decimals ? decimals + 1 : 0), '0');
+      if(progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  });
+
+  var filter = document.getElementById('regionFilter');
+  if(filter){
+    filter.addEventListener('change', function(){
+      var val = this.value;
+      document.querySelectorAll('.map-point').forEach(function(pt){
+        var match = (val === 'all' || pt.dataset.region === val);
+        pt.classList.toggle('dimmed', !match);
+      });
+    });
+  }
+
+  // Radar sweep detection: flash a point as the beam crosses it
+  var mapVisual = document.querySelector('.map-visual');
+  var mapPoints = document.querySelectorAll('.map-point');
+  if(mapVisual && mapPoints.length && !prefersReducedMotion){
+    var sweepDurationMs = 4000;
+    var sweepStart = performance.now();
+    function trackSweep(ts){
+      var rect = mapVisual.getBoundingClientRect();
+      var cx = rect.width / 2, cy = rect.height / 2;
+      var elapsed = (ts - sweepStart) % sweepDurationMs;
+      var sweepAngle = (elapsed / sweepDurationMs) * 360;
+      mapPoints.forEach(function(pt){
+        var px = (parseFloat(pt.style.left) / 100) * rect.width;
+        var py = (parseFloat(pt.style.top) / 100) * rect.height;
+        var dx = px - cx, dy = py - cy;
+        var pointAngle = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+        var diff = Math.abs(sweepAngle - pointAngle);
+        diff = Math.min(diff, 360 - diff);
+        pt.classList.toggle('detected', diff < 7);
+      });
+      requestAnimationFrame(trackSweep);
+    }
+    requestAnimationFrame(trackSweep);
+  }
+
+  // Occasional radar echo blips for ambiance
+  if(mapVisual && !prefersReducedMotion){
+    setInterval(function(){
+      var blip = document.createElement('div');
+      blip.className = 'echo-blip';
+      blip.style.left = (8 + Math.random() * 84) + '%';
+      blip.style.top = (8 + Math.random() * 84) + '%';
+      mapVisual.appendChild(blip);
+      setTimeout(function(){ blip.remove(); }, 2700);
+    }, 1400);
+  }
+
+</script>
+</body>
+</html>
