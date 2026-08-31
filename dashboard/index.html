@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0d1815">
+<title>TerraSentinel · SIH26001</title>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<style>
+  /* ============ TOKENS & CORE ============ */
+  :root{
+    --bg:#0c1613; --bg-2:#0f1c18; --panel:#132420; --panel-hi:#172b26;
+    --line:rgba(238,232,219,.08); --line-strong:rgba(238,232,219,.16);
+    --ink:#ece5d6; --ink-dim:#a9b7ae; --ink-faint:#6d8079;
+    --laterite:#c8582f; --laterite-dim:rgba(200,88,47,.16);
+    --amber:#d9a441; --amber-dim:rgba(217,164,65,.16);
+    --moss:#84a86b; --moss-dim:rgba(132,168,107,.16);
+    --teal:#5aa79c; --teal-dim:rgba(90,167,156,.14);
+    --display:'Fraunces', serif; --body:'IBM Plex Sans', -apple-system, sans-serif; --mono:'IBM Plex Mono', ui-monospace, monospace;
+    --radius-s:10px; --radius-m:16px; --radius-l:22px; --shell-pad: clamp(16px, 3vw, 32px);
+    --glass:rgba(236,229,209,.06); --glass-hi:rgba(236,229,209,.10);
+    --glass-border:rgba(236,229,209,.14); --glass-border-hi:rgba(236,229,209,.24);
+    --glass-blur: blur(20px); --glass-shadow: 0 8px 32px rgba(0,0,0,.35);
+  }
+
+  .app-shell::before{
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background-image: linear-gradient(var(--glass-border) 1px, transparent 1px), linear-gradient(90deg, var(--glass-border) 1px, transparent 1px);
+    background-size:42px 42px; opacity:.16;
+    mask-image:radial-gradient(ellipse 1400px 900px at 30% 0%, black, transparent 75%);
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-font-smoothing:antialiased;}
+  body{ margin:0; min-height:100vh; background:var(--bg); color:var(--ink); font-family:var(--body); line-height:1.45; position:relative; overflow-x:hidden;}
+  body::before{
+    content:""; position:fixed; inset:0; z-index:0;
+    background: radial-gradient(ellipse 900px 700px at 10% 0%, rgba(90,167,156,.55), transparent 55%), radial-gradient(ellipse 800px 650px at 85% 15%, rgba(200,88,47,.45), transparent 55%), radial-gradient(ellipse 700px 600px at 30% 90%, rgba(132,168,107,.4), transparent 55%), radial-gradient(ellipse 600px 500px at 95% 85%, rgba(217,164,65,.35), transparent 55%), var(--bg);
+  }
+  
+  .app-shell{ position:relative; z-index:1; display:grid; grid-template-columns: 250px 1fr; min-height:100vh; }
+  h1,h2,h3{font-family:var(--display); font-weight:600; margin:0;}
+  p{margin:0;}
+  a{color:inherit; text-decoration:none;}
+  button{font-family:var(--body); cursor:pointer;}
+
+  /* ============ SIDEBAR ============ */
+  .sidebar{ background:linear-gradient(180deg, var(--glass-hi), var(--glass)); backdrop-filter:var(--glass-blur); border-right:1px solid var(--glass-border); padding:26px 20px; display:flex; flex-direction:column; gap:6px; position:relative; }
+  .brand{ display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:600; font-size:20px; padding:2px 6px 20px 6px; }
+  .brand-mark{ width:34px; height:34px; border-radius:9px; display:grid; place-items:center; background:var(--glass-hi); border:1px solid var(--glass-border-hi); font-family:var(--mono); font-size:12px; font-weight:500; color:var(--teal); }
+  .brand-accent{color:var(--laterite);}
+  .sidebar-label{ font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); padding:0 6px 10px; }
+  nav{display:flex; flex-direction:column; gap:2px; z-index:1;}
+  .nav-item{ display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:var(--radius-s); color:var(--ink-dim); font-size:14px; font-weight:500; transition:background .15s ease, color .15s ease; cursor:pointer;}
+  .nav-item.active{ background:var(--glass-hi); color:var(--ink); box-shadow:inset 0 0 0 1px var(--glass-border-hi), inset 0 1px 0 rgba(255,255,255,.08); }
+  .nav-icon{ width:16px; text-align:center; opacity:.8; font-size:13px; }
+  .sidebar-spacer{flex:1;}
+
+  /* ============ MAIN CONTENT & TABS ============ */
+  .main-content{ padding: var(--shell-pad) var(--shell-pad) 40px; min-width:0; }
+  .topbar{ display:flex; align-items:center; justify-content:space-between; padding-bottom:22px; }
+  .breadcrumb{ font-family:var(--mono); font-size:11px; letter-spacing:.12em; color:var(--ink-faint); text-transform: uppercase;}
+  .live-dot{ width:6px; height:6px; border-radius:50%; background:var(--teal); flex:none; animation:pulse-teal 2s ease-out infinite; display:inline-block; margin-right:6px;}
+  @keyframes pulse-teal{ 0%{ box-shadow:0 0 0 0 rgba(90,167,156,.55); } 70%{ box-shadow:0 0 0 7px rgba(90,167,156,0); } 100%{ box-shadow:0 0 0 0 rgba(90,167,156,0); } }
+  
+  .tab-content { display: none; animation: fadeIn 0.4s ease; }
+  .tab-content.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  .page-heading{ display:flex; align-items:flex-end; justify-content:space-between; gap:20px; padding:6px 0 28px; flex-wrap:wrap; }
+  .eyebrow{ font-family:var(--mono); font-size:11px; letter-spacing:.14em; color:var(--teal); text-transform:uppercase; margin-bottom:10px; }
+  .page-heading h1{ font-size:clamp(28px, 3.4vw, 38px); font-weight:600; color:var(--ink); }
+  .heading-period{ color:var(--laterite); }
+  .heading-copy{ color:var(--ink-dim); margin-top:8px; font-size:14.5px; }
+
+  /* ============ UI COMPONENTS ============ */
+  .panel{ background:linear-gradient(160deg, var(--glass-hi), var(--glass)); backdrop-filter:var(--glass-blur); border:1px solid var(--glass-border); border-radius:var(--radius-l); padding:22px; display:flex; flex-direction:column; position:relative; }
+  .panel-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; gap:12px; }
+  .panel-header h2{ font-size:19px; font-weight:600; color:var(--ink); }
+
+  /* Metrics */
+  .metric-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-bottom:16px; }
+  .metric-card{ background:linear-gradient(165deg, var(--glass-hi), var(--glass)); border:1px solid var(--glass-border); border-radius:var(--radius-m); padding:20px; display:flex; flex-direction:column; gap:14px;}
+  .metric-primary{ background:linear-gradient(165deg, rgba(90,167,156,.14), var(--glass)); border-color:var(--glass-border-hi); }
+  .metric-top{ display:flex; justify-content:space-between; font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; color:var(--ink-faint); }
+  .metric-value{ font-family:var(--display); font-size:40px; font-weight:600; line-height:1; color:var(--ink); }
+  .metric-foot{ display:flex; justify-content:space-between; font-size:12px; color:var(--ink-dim); margin-top:auto; }
+  
+  .status-pill{ font-size:11px; font-weight:600; padding:4px 9px; border-radius:20px; display:inline-flex; align-items:center; gap:5px; }
+  .status-pill.low{ background:var(--moss-dim); color:var(--moss); }
+  .status-pill.normal{ background:var(--teal-dim); color:var(--teal); }
+  .status-pill.elevated{ background:var(--amber-dim); color:var(--amber); }
+  .status-pill.critical{ background:var(--laterite-dim); color:var(--laterite); }
+
+  /* Map & Dashboard Layout */
+  .primary-grid{ display:grid; grid-template-columns:1.55fr 1fr; gap:16px; margin-bottom:16px; }
+  .map-visual{ position:relative; border-radius:14px; overflow:hidden; background:var(--glass); height:380px; border:1px solid var(--glass-border); }
+  
+  .leaflet-container { background: transparent; font-family: var(--body); }
+  .leaflet-popup-content-wrapper { background: var(--panel-hi); color: var(--ink); border: 1px solid var(--glass-border); border-radius: 10px; }
+  .leaflet-popup-tip { background: var(--panel-hi); }
+
+  .alert-list{ display:flex; flex-direction:column; gap:8px; max-height: 310px; overflow-y: auto; }
+  .alert-item{ display:flex; align-items:center; gap:12px; padding:12px; border-radius:12px; border:1px solid var(--glass-border); background:var(--glass); }
+  .alert-info{ display:flex; flex-direction:column; gap:2px; }
+  .alert-info strong{ font-size:13.5px; font-weight:600; }
+  .alert-info span{ font-family:var(--mono); font-size:11px; color:var(--ink-faint); }
+
+  .sensor-table{ display:flex; flex-direction:column; max-height: 250px; overflow-y: auto; }
+  .table-head{ display:grid; grid-template-columns:1.5fr 1fr 1fr; gap:8px; font-family:var(--mono); font-size:10px; letter-spacing:.1em; color:var(--ink-faint); padding:0 12px 10px; border-bottom:1px solid var(--line); }
+  .table-row{ display:grid; grid-template-columns:1.5fr 1fr 1fr; gap:8px; align-items:center; padding:13px 12px; border-radius:10px; font-size:13px; border-bottom:1px solid var(--line); }
+
+  /* Home Tab Specifics */
+  .hero-card { text-align: center; padding: 60px 20px; }
+  .hero-card h2 { font-size: 32px; color: var(--teal); margin-bottom: 15px;}
+  .home-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+
+  /* Citizen Tab Specifics */
+  .citizen-warning { background: var(--laterite-dim); border: 1px solid var(--laterite); padding: 20px; border-radius: 12px; display: flex; align-items: center; gap: 15px; margin-bottom: 20px;}
+  .citizen-warning-icon { font-size: 32px; color: var(--laterite); }
+  .citizen-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .escape-map { height: 300px; border-radius: 12px; border: 1px solid var(--glass-border); }
+  .safety-list { list-style: none; padding: 0; margin: 0; }
+  .safety-list li { padding: 12px; border-bottom: 1px solid var(--line); font-size: 14.5px; display: flex; gap: 10px; align-items: start;}
+  .safety-list li::before { content: "✓"; color: var(--teal); font-weight: bold; }
+
+</style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">TS</span><span>Terra<span class="brand-accent">Sentinel</span></span></div>
+      <div class="sidebar-label">Navigation Menu</div>
+      <nav>
+        <a class="nav-item active" onclick="switchTab('tab-home', this, 'HOME / PROJECT OVERVIEW')"><span class="nav-icon">⌂</span>Home</a>
+        <a class="nav-item" onclick="switchTab('tab-district', this, 'AUTHORITY / DISTRICT OPERATIONS')"><span class="nav-icon">◉</span>District Risk</a>
+        <a class="nav-item" onclick="switchTab('tab-citizen', this, 'CITIZEN / EARLY WARNING APP')"><span class="nav-icon">👤</span>For User (Citizen)</a>
+      </nav>
+      <div class="sidebar-spacer"></div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="breadcrumb" id="dynamic-breadcrumb">HOME / PROJECT OVERVIEW</div>
+        <div class="top-actions">
+          <span style="font-family: var(--mono); font-size: 12px; color: var(--ink-dim);"><span class="live-dot"></span><span id="liveClock">Live data · --:--:--</span></span>
+        </div>
+      </header>
+
+      <!-- ========================================== -->
+      <!-- TAB 1: HOME (LANDING PAGE)                 -->
+      <!-- ========================================== -->
+      <div id="tab-home" class="tab-content active">
+        <section class="page-heading">
+          <div>
+            <p class="eyebrow" id="currentDate">--</p>
+            <h1>Welcome to TerraSentinel<span class="heading-period">.</span></h1>
+            <p class="heading-copy">SIH26001: AI-Based Landslide Early Warning System for the North Eastern Region.</p>
+          </div>
+        </section>
+        <article class="panel hero-card">
+          <h2>Predict. Warn. Protect.</h2>
+          <p style="color: var(--ink-dim); max-width: 600px; margin: 0 auto 30px; font-size: 16px;">
+            TerraSentinel bridges the gap between complex geotechnical physics and actionable early warnings. Using real-time telemetry and infinite slope analysis, we protect vulnerable communities across the NER.
+          </p>
+          <div style="display: flex; gap: 15px; justify-content: center;">
+            <button onclick="document.querySelectorAll('.nav-item')[1].click()" style="background: var(--teal); color: #000; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold;">Launch District Dashboard</button>
+            <button onclick="document.querySelectorAll('.nav-item')[2].click()" style="background: transparent; color: var(--teal); border: 1px solid var(--teal); padding: 12px 24px; border-radius: 8px; font-weight: bold;">View Citizen App</button>
+          </div>
+        </article>
+        <div class="home-grid">
+          <article class="panel">
+            <h3>Backend Architecture</h3>
+            <p style="color: var(--ink-dim); font-size: 14px; margin-top: 10px;">Powered by FastAPI, processing parallel telemetry from Open-Meteo and Open-Elevation. Evaluates Antecedent Moisture and the Mohr-Coulomb failure criteria.</p>
+          </article>
+          <article class="panel">
+            <h3>Frontend Experience</h3>
+            <p style="color: var(--ink-dim); font-size: 14px; margin-top: 10px;">Interactive Leaflet mapping with Google Maps Satellite Hybrid integration. Features real-time state synchronization and adaptive risk rendering.</p>
+          </article>
+        </div>
+      </div>
+
+      <!-- ========================================== -->
+      <!-- TAB 2: DISTRICT RISK (DASHBOARD)           -->
+      <!-- ========================================== -->
+      <div id="tab-district" class="tab-content">
+        <section class="page-heading">
+          <div>
+            <h1>NER Operations Dashboard<span class="heading-period">.</span></h1>
+            <p class="heading-copy">Real-time geospatial risk mapping and early warning telemetry.</p>
+          </div>
+        </section>
+
+        <section class="metric-grid">
+          <article class="metric-card metric-primary">
+            <div class="metric-top"><span>REGIONAL RISK INDEX</span></div>
+            <div class="metric-value"><span id="metric-risk-index">--</span><span>/100</span></div>
+            <div class="metric-foot"><span class="status-pill low" id="metric-risk-status">● Calculating</span></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>ACTIVE ALERTS</span></div>
+            <div class="metric-value"><span id="metric-active-alerts">0</span></div>
+            <div class="metric-foot"><span class="status-pill elevated" id="metric-elevated-status">● Live Data</span></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>MONITORED DISTRICTS</span></div>
+            <div class="metric-value"><span id="metric-zones">0</span></div>
+            <div class="metric-foot"><span class="status-pill normal" id="metric-zones-status">● Checking...</span></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>API UPTIME</span></div>
+            <div class="metric-value"><span>99.9</span><span>%</span></div>
+            <div class="metric-foot"><span class="status-pill good">● Connected</span></div>
+          </article>
+        </section>
+
+        <section class="primary-grid">
+          <article class="panel">
+            <div class="panel-header"><div><p class="eyebrow">AQI-STYLE RISK HEATMAP</p><h2>Live Risk Mapping</h2></div></div>
+            <div class="map-visual" id="dashboard-map"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header"><div><p class="eyebrow">REQUIRES ATTENTION</p><h2>Early alerts</h2></div></div>
+            <div class="alert-list" id="alerts-container">
+               <div class="alert-item" style="opacity: 0.6;"><div class="alert-info"><span>Waiting for telemetry...</span></div></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header"><div><p class="eyebrow">DISTRICT TELEMETRY</p><h2>Status Feed</h2></div></div>
+          <div class="sensor-table">
+            <div class="table-head"><span>LOCATION</span><span>COORDINATES</span><span>CURRENT STATUS</span></div>
+            <div id="sensor-table-container"></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ========================================== -->
+      <!-- TAB 3: FOR USER (CITIZEN PORTAL)           -->
+      <!-- ========================================== -->
+      <div id="tab-citizen" class="tab-content">
+        <section class="page-heading">
+          <div>
+            <h1>Citizen Safety Portal<span class="heading-period">.</span></h1>
+            <p class="heading-copy">Localized early warnings and emergency escape routing for your current location.</p>
+          </div>
+        </section>
+
+        <div class="citizen-warning">
+          <div class="citizen-warning-icon">⚠</div>
+          <div>
+            <h2 style="color: var(--laterite); margin: 0 0 5px 0;">LEVEL 3: HIGH ALERT</h2>
+            <p style="color: #fff; margin: 0; font-size: 14.5px;">Heavy rainfall and critical soil saturation detected in <strong>Shillong, East Khasi Hills</strong>. Subsurface weakening active. Halt movement on hill roads.</p>
+          </div>
+        </div>
+
+        <div class="citizen-grid">
+          <article class="panel">
+            <div class="panel-header"><h2>Safest Evacuation Route</h2></div>
+            <div class="escape-map" id="citizen-map"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header"><h2>Immediate Precautions</h2></div>
+            <ul class="safety-list">
+              <li>Evacuate immediately if you are near steep slopes or drainage channels.</li>
+              <li>Do not cross flowing water or mud on roadways; turn around immediately.</li>
+              <li>Listen for unusual sounds like trees cracking or boulders knocking, which indicate moving debris.</li>
+              <li>Turn off gas, electricity, and water if instructed by local authorities.</li>
+              <li>Move to the designated safe zone: <strong>Polo Grounds Relief Center</strong>.</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+  // ==========================================
+  // GLOBAL SETUP & UTILS
+  // ==========================================
+  const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  document.getElementById('currentDate').textContent = new Date().toLocaleDateString('en-US', dateOptions).toUpperCase();
+  setInterval(() => {
+    const el = document.getElementById('liveClock');
+    if(el) el.textContent = 'Live data · ' + new Date().toLocaleTimeString('en-US', { hour12: false });
+  }, 1000);
+
+  // ==========================================
+  // TAB SWITCHING LOGIC
+  // ==========================================
+  let citizenMapInitialized = false;
+
+  function switchTab(tabId, navElement, breadcrumbText) {
+    // Hide all tabs
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+    // Show target tab
+    document.getElementById(tabId).classList.add('active');
+    
+    // Update Sidebar Styling
+    document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+    navElement.classList.add('active');
+
+    // Update Breadcrumb
+    document.getElementById('dynamic-breadcrumb').textContent = breadcrumbText;
+
+    // Map refresh trick (Leaflet needs to invalidate size if it was hidden when created)
+    if (tabId === 'tab-district') {
+      setTimeout(() => { dashboardMap.invalidateSize(); }, 100);
+    }
+    
+    // Initialize Citizen Map ONLY when the tab is first clicked
+    if (tabId === 'tab-citizen' && !citizenMapInitialized) {
+      initCitizenMap();
+      citizenMapInitialized = true;
+    }
+  }
+
+  // ==========================================
+  // TAB 2: DASHBOARD MAP & API LOGIC
+  // ==========================================
+  const dashboardMap = L.map('dashboard-map').setView([26.0, 92.5], 6);
+  
+  // Google Maps Satellite Hybrid Layer
+  L.tileLayer('http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+      maxZoom: 20,
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      attribution: '&copy; Google Maps'
+  }).addTo(dashboardMap);
+
+  const markersLayer = L.layerGroup().addTo(dashboardMap);
+
+  function getRiskPercentage(color) {
+      if (color === "#D32F2F") return "95%"; 
+      if (color === "#F57C00") return "75%"; 
+      if (color === "#FBC02D") return "45%"; 
+      return "10%"; 
+  }
+  
+  function getSeverityClass(color) {
+      if (color === "#D32F2F" || color === "#F57C00") return { bg: "var(--laterite-dim)", text: "var(--laterite)" };
+      if (color === "#FBC02D") return { bg: "var(--amber-dim)", text: "var(--amber)" };
+      return { bg: "var(--moss-dim)", text: "var(--moss)" };
+  }
+
+  async function fetchMacroData() {
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/district-macro');
+      if (!response.ok) return;
+      const data = await response.json();
+      
+      let activeAlertsCount = 0;
+      let riskScoreAccumulator = 0;
+      
+      markersLayer.clearLayers();
+      document.getElementById('alerts-container').innerHTML = '';
+      document.getElementById('sensor-table-container').innerHTML = '';
+
+      data.ner_macro_overview.forEach(zone => {
+        const badgeColor = zone.color || "#388E3C";
+        const statusText = zone.current_status || "Unknown";
+        const isAlert = badgeColor !== '#388E3C';
+        const riskPct = getRiskPercentage(badgeColor);
+        const severity = getSeverityClass(badgeColor);
+        
+        if (isAlert) activeAlertsCount++;
+        riskScoreAccumulator += parseInt(riskPct.replace('%', ''));
+
+        // Dashboard Map Marker
+        const customIcon = L.divIcon({
+            html: `<div style="background-color: ${badgeColor}; color: #111; font-weight: 800; font-family: monospace; font-size: 13px; padding: 5px 2px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.4); box-shadow: 0 0 12px ${badgeColor}; text-align:center; min-width: 45px;">${riskPct}<br><span style="font-size:9px; opacity:0.8;">RISK</span></div>`,
+            className: '', iconSize: [45, 40], iconAnchor: [22, 20]
+        });
+        L.marker([zone.coordinates.lat, zone.coordinates.lon], {icon: customIcon})
+          .addTo(markersLayer)
+          .bindPopup(`<div style="font-family: 'IBM Plex Sans', sans-serif;"><strong style="font-size: 14px;">${zone.district}</strong><br><span style="color: ${badgeColor}; font-weight: bold;">${statusText}</span></div>`);
+
+        // Alerts List
+        if (isAlert) {
+          document.getElementById('alerts-container').innerHTML += `
+            <div class="alert-item">
+              <div class="alert-severity" style="background:${severity.bg}; color:${severity.text}; border-radius:8px; padding:6px 12px; font-weight:bold;">!</div>
+              <div class="alert-info"><strong style="color:${severity.text}">${statusText}</strong><span>${zone.district}, ${zone.state}</span></div>
+            </div>`;
+        }
+
+        // Table
+        document.getElementById('sensor-table-container').innerHTML += `
+          <div class="table-row">
+            <strong style="font-size:14px;">${zone.district}</strong>
+            <span style="font-family: var(--mono); font-size: 11px; opacity: 0.8;">${zone.coordinates.lat.toFixed(2)}, ${zone.coordinates.lon.toFixed(2)}</span>
+            <span class="status-pill" style="background-color:${badgeColor}22; color:${badgeColor}; border: 1px solid ${badgeColor}55;">${statusText.split(':')[0]}</span>
+          </div>`;
+      });
+
+      // Update Top Metrics
+      const total = data.ner_macro_overview.length;
+      document.getElementById('metric-zones').innerText = total;
+      document.getElementById('metric-active-alerts').innerText = activeAlertsCount;
+      document.getElementById('metric-risk-index').innerText = Math.round(riskScoreAccumulator / total);
+
+    } catch (e) {
+      console.error("API fetch failed", e);
+    }
+  }
+
+  // Fetch immediately and every 3 minutes
+  fetchMacroData();
+  setInterval(fetchMacroData, 180000);
+
+
+  // ==========================================
+  // TAB 3: CITIZEN PORTAL ESCAPE MAP
+  // ==========================================
+  function initCitizenMap() {
+    // Focused on Shillong for the dummy citizen alert
+    const citizenMap = L.map('citizen-map').setView([25.5788, 91.8933], 15);
+    
+    // Google Maps Satellite Hybrid
+    L.tileLayer('http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+        maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+    }).addTo(citizenMap);
+
+    // Current Location Marker (Red)
+    L.circleMarker([25.5788, 91.8933], {
+      color: '#D32F2F', fillColor: '#D32F2F', fillOpacity: 1, radius: 8
+    }).addTo(citizenMap).bindPopup("<b>You are here</b><br>High Risk Zone").openPopup();
+
+    // Safe Zone Marker (Green)
+    L.circleMarker([25.5850, 91.8980], {
+      color: '#388E3C', fillColor: '#388E3C', fillOpacity: 1, radius: 8
+    }).addTo(citizenMap).bindPopup("<b>Relief Center</b>");
+
+    // Dummy Escape Route (Dashed Line)
+    const latlngs = [
+      [25.5788, 91.8933],
+      [25.5800, 91.8940],
+      [25.5820, 91.8920],
+      [25.5850, 91.8980]
+    ];
+    L.polyline(latlngs, {color: '#5aa79c', weight: 4, dashArray: '10, 10'}).addTo(citizenMap);
+    
+    // Ensure Leaflet renders correctly after tab un-hides
+    setTimeout(() => { citizenMap.invalidateSize(); }, 100);
+  }
+
+</script>
+</body>
+</html>
